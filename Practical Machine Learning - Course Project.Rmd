@@ -1,0 +1,138 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Augusto Hassel"
+date: "Sunday, March 22, 2015"
+output: html_document
+---
+In this project, we will be using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+The goal of this project is to predict the manner in which the individuals on our sample did the exercise.
+
+First we will load our global options to work with.
+```{r globaloption, results='hide'}
+library("caret"); library("ggplot2");library("knitr");library("tree");library("randomForest");library("gbm");library("e1071");
+opts_chunk$set(echo=TRUE, results='asis', cache=TRUE)
+```
+
+We are going to load the data. 
+```{r, results='hide'}
+data <- read.csv(file = "pml-training.csv", header = T, na.strings = c("", "NA", "NULL", "#DIV/0!"))
+cases <- read.csv(file = "pml-testing.csv", header = T, na.strings = c("", "NA", "NULL"))
+```
+
+After doing that, we are going to pre process de data, taking out variables that have NA values.
+```{r, results='hide'}
+counting.na <- as.data.frame(apply(data, MARGIN = 2, function(x) sum(is.na(x))))
+names(counting.na) <- "count"
+not.na <- row.names(counting.na)[which(counting.na$count == 0)]
+
+data <- data[names(data) %in% not.na]
+cases <- cases[names(cases) %in% not.na]
+```
+
+We divide the set into a training and a test subset to perform our analysis.
+```{r, results='hide'}
+inTrain <- createDataPartition(y = data$classe, p = 0.7, list = F)
+training <- data[inTrain, ]
+testing <- data[-inTrain, ]
+```
+
+We came to realise that we could reduce even more our set by analysing the zero variance of the variables on the set. This variables won't help us to explain the model so the must be taken away.
+```{r, results='hide'}
+nzv <- nearZeroVar(training)
+
+training <- training[-nzv]
+testing <- testing[-nzv]
+cases <- cases[-nzv]
+data <- data[-nzv]
+```
+
+We can take away time related and user related variables from the set.
+```{r, results='hide'}
+toDelete <- c("X", "user_name", "new_window", "num_window", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp")
+
+training <- training[!(names(training) %in% toDelete)]
+testing <- testing[!(names(testing) %in% toDelete)]
+data <- data[!(names(data) %in% toDelete)]
+cases <- cases[!(names(cases) %in% toDelete)]
+```
+
+Now that we have finally completed our pre proces, we can start modeling the data. 
+
+We are going to select one of the following models that have the greater accuracy on the testing subset:
+
+1- Classification Tree
+
+2- Prunning Tree
+
+3- Random Forest
+
+## Classification Tree
+```{r, results='markup'}
+treeModel <- tree(classe ~ ., data = training)
+summary(treeModel)
+```
+```{r, results='markup'}
+treePredClass <- predict(object = treeModel, newdata = testing, type = "class")
+table(predictedValues = treePredClass, testing$classe)
+```
+```{r, results='markup'}
+treeA <- mean(treePredClass == testing$classe)
+```
+
+We have an accuracy of `r treeA` on our Classification Tree. Let us move on into other models. 
+
+## Prunning Tree
+```{r, results='markup'}
+crossVal <- cv.tree(object = treeModel, FUN = prune.misclass)
+```
+```{r, echo= F}
+plot(crossVal$size, crossVal$dev, type = "b")
+```
+
+"Dev" give us the cross validation error.
+
+Now we select the maximum nodes for our model.
+```{r, results='hide'}
+pruneTree <- prune.misclass(tree = treeModel, best = 16)
+```
+
+With 16 nodes the miscclasification is being reduced consirably. 
+Now we evaluate the accuracy. 
+```{r, results='markup'}
+prunePredClass <- predict(object = pruneTree, newdata = testing, type = "class")
+table(prunePredClass, testing$classe)
+```
+```{r, results='hide'}
+pruneA <- mean(prunePredClass == testing$classe)
+```
+We have an accuracy of `r pruneA` on our Prunne Tree. Let us move on into other models because this is to similar to our classification tree. 
+
+## Random Forest
+```{r, results='hide'}
+randomForesModel <- randomForest(classe ~ . , data = training, importance = T)
+randomForestPredict <- predict(object = randomForesModel, newdata = testing)
+```
+```{r, results='markup'}
+table(randomForestPredict, testing$classe)
+```
+
+```{r, results='hide'}
+forestA <- mean(randomForestPredict == testing$classe)
+```
+We have an accuracy of `r forestA` on our Random Forest. This has been the better accuracy so far.
+
+## Conclusion
+We are drawn to select the Random Forest model because of it accuracy and performance over the other models. We have tested ourside this work SVM and Boosting models, but the accuracy hasn't improved that much in terms of the performance, that's why we keep this models as our selected one for this case.
+
+### Accuracy between models.
+1- Classification Tree: `r treeA`
+
+2 - Prunne Tree: `r pruneA`
+
+3 - Random Forest: `r forestA`
+
+# Cases results
+```{r, results='markup'}
+CasePredictions <- predict(object = randomForesModel, newdata = cases)
+CasePredictions
+```
